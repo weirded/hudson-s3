@@ -3,28 +3,27 @@
   <parent>
     <groupId>org.jvnet.hudson.plugins</groupId>
     <artifactId>plugin</artifactId>
-    <version>1.367</version>
+    <version>1.395</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   
   <artifactId>s3</artifactId>
   <packaging>hpi</packaging>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
   <name>Hudson S3 publisher plugin</name>
-  <url>http://github.com/d6y/hudson-s3</url>
+  <url>http://github.com/weirded/hudson-s3</url>
 
   <developers>
     <developer> <id>dougm</id> <name>Doug MacEachern</name> </developer>
     <developer> <id>d6y</id> <name>Richard Dallaway</name> </developer>
+    <developer> <id>weirded</id> <name>Stefan Zier</name> </developer>
   </developers>
-  
 
-  
   <dependencies>
     <dependency>
-      <groupId>net.java.dev.jets3t</groupId>
-      <artifactId>jets3t</artifactId>
-      <version>0.6.1</version>
+      <groupId>com.amazonaws</groupId>
+      <artifactId>aws-java-sdk</artifactId>
+      <version>1.3.2</version>
     </dependency>
   </dependencies>
 </project>
