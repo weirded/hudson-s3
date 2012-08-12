@@ -1,5 +1,8 @@
 package com.hyperic.hudson.plugin;
 
+import com.amazonaws.services.s3.transfer.Transfer;
+import com.amazonaws.services.s3.transfer.TransferManager;
+import com.amazonaws.services.s3.transfer.Upload;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -18,6 +21,7 @@ import net.sf.json.JSONObject;
 import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.StaplerRequest;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.ArrayList;
@@ -99,6 +103,9 @@ public final class S3BucketPublisher extends Notifier {
 
       log(listener.getLogger(), "Entries: " + entries);
 
+      TransferManager transferManager = profile.createTransferManager();
+      List<Upload> uploads = new ArrayList<Upload>();
+
       for (Entry entry : entries) {
         String expanded = Util.replaceMacro(entry.sourceFile, envVars);
         FilePath ws = build.getWorkspace();
@@ -112,11 +119,52 @@ public final class S3BucketPublisher extends Notifier {
             log(listener.getLogger(), error);
         }
         String bucket = Util.replaceMacro(entry.bucket, envVars);
+        profile.ensureBucket(bucket);
         for (FilePath src : paths) {
-          log(listener.getLogger(), "bucket=" + bucket + ", file=" + src.getName());
-          profile.upload(bucket, src, listener.getLogger());
+          File file = new File(src.getRemote());
+          log(listener.getLogger(), "bucket=" + bucket + ", file=" + file.getAbsolutePath());
+          if (src.isDirectory()) {
+            throw new IOException(file.getAbsolutePath() + " is a directory");
+          }
+
+          if (!src.exists()) {
+            throw new IOException(file.getAbsolutePath() + " does not exist");
+          }
+
+          log(listener.getLogger(),
+              String.format("START upload of %s to bucket %s (%,d bytes)",
+                  src.getName(), bucket, file.length()));
+
+          Upload upload = transferManager.upload(bucket, file.getName(), file);
+          uploads.add(upload);
         }
       }
+
+      int unfinishedUploads = uploads.size();
+      log(listener.getLogger(), String.format("Waiting for %d S3 uploads to complete.", uploads.size()));
+      while(unfinishedUploads > 0) {
+
+        Thread.sleep(500);
+
+        int newCount = 0;
+        for (Upload upload : uploads) {
+          Transfer.TransferState state = upload.getState();
+          if (state == Transfer.TransferState.Canceled) {
+            throw new IOException("Upload was cancelled!");
+          }
+
+          if (!upload.isDone()) {
+            newCount +=1;
+          }
+        }
+
+        unfinishedUploads = newCount;
+      }
+
+      log(listener.getLogger(), String.format("All %d S3 uploads are complete.", uploads.size()));
+
+      transferManager.shutdownNow();
+
     } catch (IOException e) {
       e.printStackTrace(listener.error("Failed to upload files"));
       build.setResult(Result.UNSTABLE);

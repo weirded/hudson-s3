@@ -5,13 +5,8 @@ import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.Bucket;
-import com.amazonaws.services.s3.model.PutObjectRequest;
-import hudson.FilePath;
-import org.apache.commons.lang.StringUtils;
+import com.amazonaws.services.s3.transfer.TransferManager;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.PrintStream;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -81,7 +76,7 @@ public class S3Profile {
     this.s3 = null;
   }
 
-  private void ensureBucket(String bucketName) {
+  public void ensureBucket(String bucketName) {
     List<Bucket> buckets = this.s3.listBuckets();
     for (Bucket bucket : buckets) {
       if (bucket.getName().equals(bucketName)) {
@@ -92,35 +87,8 @@ public class S3Profile {
     this.s3.createBucket(bucketName);
   }
 
-
-  public void upload(String bucketName,
-                     FilePath filePath,
-                     PrintStream logger)
-    throws IOException, InterruptedException {
-
-    if (filePath.isDirectory()) {
-      throw new IOException(filePath + " is a directory");
-    } else {
-      File file = new File(filePath.getName());
-      ensureBucket(bucketName);
-
-      try {
-        long startTime = System.currentTimeMillis();
-
-        log(logger, String.format("START upload of %s to bucket %s", file.getName(), bucketName));
-        s3.putObject(new PutObjectRequest(bucketName, file.getName(), file));
-
-        log(logger, String.format("DONE upload of %s to bucket %s (%,d)",
-          file.getName(), bucketName, System.currentTimeMillis() - startTime));
-      } catch (Exception e) {
-        throw new IOException("put " + file + ": " + e, e);
-      }
-    }
-  }
-
-  protected void log(final PrintStream logger, final String message) {
-    final String name =
-      StringUtils.defaultString(S3BucketPublisher.DESCRIPTOR.getShortName());
-    logger.println(name + message);
+  public TransferManager createTransferManager() {
+    AWSCredentials creds = new BasicAWSCredentials(this.accessKey, this.secretKey);
+    return new TransferManager(creds);
   }
 }
