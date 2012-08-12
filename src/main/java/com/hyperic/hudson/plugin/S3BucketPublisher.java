@@ -1,8 +1,12 @@
 package com.hyperic.hudson.plugin;
 
-import com.amazonaws.services.s3.transfer.Transfer;
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.services.s3.internal.Mimetypes;
+import com.amazonaws.services.s3.internal.ServiceUtils;
+import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
+import com.amazonaws.util.BinaryUtils;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -21,10 +25,11 @@ import net.sf.json.JSONObject;
 import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.StaplerRequest;
 
-import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
@@ -121,49 +126,57 @@ public final class S3BucketPublisher extends Notifier {
         String bucket = Util.replaceMacro(entry.bucket, envVars);
         profile.ensureBucket(bucket);
         for (FilePath src : paths) {
-          File file = new File(src.getRemote());
-          log(listener.getLogger(), "bucket=" + bucket + ", file=" + file.getAbsolutePath());
+          log(listener.getLogger(), "bucket=" + bucket + ", file=" + src.getName());
+
           if (src.isDirectory()) {
-            throw new IOException(file.getAbsolutePath() + " is a directory");
+            throw new IOException(src.getRemote() + " is a directory");
           }
 
           if (!src.exists()) {
-            throw new IOException(file.getAbsolutePath() + " does not exist");
+            throw new IOException(src.getRemote() + " does not exist");
+          }
+
+          if (src.length() < 1) {
+            throw new IOException(src.getRemote() + " is 0 length!");
           }
 
           log(listener.getLogger(),
-              String.format("START upload of %s to bucket %s (%,d bytes)",
-                  src.getName(), bucket, file.length()));
+              String.format("Calculating MD5 for %s (%,d bytes)",
+                  src.getName(), src.length()));
 
-          Upload upload = transferManager.upload(bucket, file.getName(), file);
+          ObjectMetadata meta = new ObjectMetadata();
+          meta.setContentLength(src.length());
+          meta.setLastModified(new Date());
+          meta.setContentEncoding(Mimetypes.MIMETYPE_OCTET_STREAM);
+
+          InputStream fileInputStream = null;
+          try {
+              fileInputStream = src.read();
+              byte[] md5Hash = ServiceUtils.computeMD5Hash(src.read());
+              meta.setContentMD5(BinaryUtils.toBase64(md5Hash));
+          } catch (Exception e) {
+              throw new AmazonClientException(
+                      "Unable to calculate MD5 hash: " + e.getMessage(), e);
+          } finally {
+              try {fileInputStream.close();} catch (Exception e) {}
+          }
+
+          log(listener.getLogger(),
+              String.format("Uploading %s to bucket %s (%,d bytes)",
+                  src.getName(), bucket, src.length()));
+
+          Upload upload = transferManager.upload(bucket, src.getName(), src.read(), meta);
           uploads.add(upload);
         }
       }
 
-      int unfinishedUploads = uploads.size();
       log(listener.getLogger(), String.format("Waiting for %d S3 uploads to complete.", uploads.size()));
-      while(unfinishedUploads > 0) {
-
-        Thread.sleep(500);
-
-        int newCount = 0;
-        for (Upload upload : uploads) {
-          Transfer.TransferState state = upload.getState();
-          if (state == Transfer.TransferState.Canceled) {
-            throw new IOException("Upload was cancelled!");
-          }
-
-          if (!upload.isDone()) {
-            newCount +=1;
-          }
-        }
-
-        unfinishedUploads = newCount;
+      for (Upload upload : uploads) {
+        upload.waitForUploadResult();
       }
 
-      log(listener.getLogger(), String.format("All %d S3 uploads are complete.", uploads.size()));
-
       transferManager.shutdownNow();
+      log(listener.getLogger(), String.format("All %d S3 uploads are complete.", uploads.size()));
 
     } catch (IOException e) {
       e.printStackTrace(listener.error("Failed to upload files"));
