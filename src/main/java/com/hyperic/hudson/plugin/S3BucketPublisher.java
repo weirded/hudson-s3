@@ -1,5 +1,8 @@
 package com.hyperic.hudson.plugin;
 
+import com.amazonaws.services.s3.transfer.Transfer;
+import com.amazonaws.services.s3.transfer.TransferManager;
+import com.amazonaws.services.s3.transfer.Upload;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -99,6 +102,9 @@ public final class S3BucketPublisher extends Notifier {
 
       log(listener.getLogger(), "Entries: " + entries);
 
+      TransferManager transferManager = profile.createTransferManager();
+      List<Upload> uploads = new ArrayList<Upload>();
+
       for (Entry entry : entries) {
         String expanded = Util.replaceMacro(entry.sourceFile, envVars);
         FilePath ws = build.getWorkspace();
@@ -112,11 +118,42 @@ public final class S3BucketPublisher extends Notifier {
             log(listener.getLogger(), error);
         }
         String bucket = Util.replaceMacro(entry.bucket, envVars);
+        profile.ensureBucket(bucket);
         for (FilePath src : paths) {
           log(listener.getLogger(), "bucket=" + bucket + ", file=" + src.getName());
-          profile.upload(bucket, src, listener.getLogger());
+          if (src.isDirectory()) {
+            throw new IOException(src.getAbsolutePath() + " is a directory");
+          }
+
+          log(listener.getLogger(), String.format("START upload of %s to bucket %s", src.getName(), bucket));
+          Upload upload = transferManager.upload(bucket, src.getName(), src);
+          uploads.add(upload);
         }
       }
+
+      int unfinishedUploads = uploads.size();
+      log(listener.getLogger(), String.format("Waiting for %d S3 uploads to complete.", uploads.size()));
+      while(unfinishedUploads > 0) {
+
+        Thread.currentThread().sleep(500);
+
+        int newCount = 0;
+        for (Upload upload : uploads) {
+          TransferState state = upload.getState();
+          if (state == Transfer.TransferState.Canceled) {
+            throw new IOException("Upload was cancelled!")
+          }
+
+          if (state != Transfer.TransferState.Completed) {
+            newCount +=1;
+          }
+        }
+
+        unfinishedUploads = newCount;
+      }
+
+      log(listener.getLogger(), String.format("All %d S3 uploads are complete.", uploads.size()));
+
     } catch (IOException e) {
       e.printStackTrace(listener.error("Failed to upload files"));
       build.setResult(Result.UNSTABLE);
