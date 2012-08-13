@@ -1,8 +1,6 @@
 package com.hyperic.hudson.plugin;
 
-import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.s3.internal.Mimetypes;
-import com.amazonaws.services.s3.internal.ServiceUtils;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
@@ -26,7 +24,6 @@ import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.StaplerRequest;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.Date;
@@ -83,7 +80,7 @@ public final class S3BucketPublisher extends Notifier {
   public boolean perform(AbstractBuild<?, ?> build,
                          Launcher launcher,
                          BuildListener listener)
-    throws InterruptedException, IOException {
+      throws InterruptedException, IOException {
 
     if (build.getResult() == Result.FAILURE) {
       // build failed. don't post
@@ -149,17 +146,8 @@ public final class S3BucketPublisher extends Notifier {
           meta.setLastModified(new Date());
           meta.setContentEncoding(Mimetypes.MIMETYPE_OCTET_STREAM);
 
-          InputStream fileInputStream = null;
-          try {
-              fileInputStream = src.read();
-              byte[] md5Hash = ServiceUtils.computeMD5Hash(src.read());
-              meta.setContentMD5(BinaryUtils.toBase64(md5Hash));
-          } catch (Exception e) {
-              throw new AmazonClientException(
-                      "Unable to calculate MD5 hash: " + e.getMessage(), e);
-          } finally {
-              try {fileInputStream.close();} catch (Exception e) {}
-          }
+          // This uses Hudson's remote mechanism to calculate the MD5 of the file.
+          meta.setContentMD5(BinaryUtils.toBase64(Util.fromHexString(src.digest())));
 
           log(listener.getLogger(),
               String.format("Uploading %s to bucket %s (%,d bytes)",
