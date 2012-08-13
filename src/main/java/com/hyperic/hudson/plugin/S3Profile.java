@@ -4,10 +4,8 @@ import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.Bucket;
 import com.amazonaws.services.s3.transfer.TransferManager;
 
-import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -55,7 +53,7 @@ public class S3Profile {
   }
 
   public void login() {
-    if (this.s3 != null) {
+    if (s3 != null) {
       return;
     }
     try {
@@ -68,23 +66,22 @@ public class S3Profile {
     }
   }
 
+  /**
+   * Check whether the credentials configured are valid. Used by the UI to ensure the user entered
+   * valid credentials.
+   */
   public void check() {
-    this.s3.listBuckets();
+    s3.doesBucketExist("never-never-land");
   }
 
   public void logout() {
-    this.s3 = null;
+    s3 = null;
   }
 
   public void ensureBucket(String bucketName) {
-    List<Bucket> buckets = this.s3.listBuckets();
-    for (Bucket bucket : buckets) {
-      if (bucket.getName().equals(bucketName)) {
-        return;
-      }
+    if (!s3.doesBucketExist(bucketName)) {
+      s3.createBucket(bucketName);
     }
-
-    this.s3.createBucket(bucketName);
   }
 
   public TransferManager createTransferManager() {
