@@ -125,12 +125,12 @@ public final class S3BucketPublisher extends Notifier {
         for (FilePath src : paths) {
           log(listener.getLogger(), "bucket=" + bucket + ", file=" + src.getName());
 
-          if (src.isDirectory()) {
-            throw new IOException(src.getRemote() + " is a directory");
-          }
-
           if (!src.exists()) {
             throw new IOException(src.getRemote() + " does not exist");
+          }
+
+          if (src.isDirectory()) {
+            throw new IOException(src.getRemote() + " is a directory");
           }
 
           if (src.length() < 1) {

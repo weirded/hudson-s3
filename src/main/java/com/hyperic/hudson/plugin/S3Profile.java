@@ -57,8 +57,7 @@ public class S3Profile {
       return;
     }
     try {
-      AWSCredentials creds = new BasicAWSCredentials(this.accessKey, this.secretKey);
-      this.s3 = new AmazonS3Client(creds);
+      this.s3 = new AmazonS3Client(createCredentials());
       this.s3.listBuckets();
     } catch (RuntimeException e) {
       LOGGER.log(Level.SEVERE, e.getMessage());
@@ -85,7 +84,10 @@ public class S3Profile {
   }
 
   public TransferManager createTransferManager() {
-    AWSCredentials creds = new BasicAWSCredentials(this.accessKey, this.secretKey);
-    return new TransferManager(creds);
+    return new TransferManager(createCredentials());
+  }
+
+  private AWSCredentials createCredentials() {
+    return new BasicAWSCredentials(this.accessKey, this.secretKey);
   }
 }
