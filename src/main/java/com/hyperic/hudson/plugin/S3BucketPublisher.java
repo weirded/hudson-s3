@@ -160,7 +160,11 @@ public final class S3BucketPublisher extends Notifier {
 
             log(listener.getLogger(), String.format("Waiting for %d S3 uploads to complete.", uploads.size()));
             for (Upload upload : uploads) {
-                upload.waitForUploadResult();
+                try{
+                    upload.waitForUploadResult();
+                } catch (Exception e){
+                    LOGGER.log(Level.WARNING, String.format("Unable to upload file: %s", upload.getDescription()), e);
+                }
                 log(listener.getLogger(), String.format("Upload result for %s was %s",
                     upload.getDescription(), upload.getState().name()));
             }
