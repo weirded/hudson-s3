@@ -24,11 +24,9 @@ import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.StaplerRequest;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -36,6 +34,7 @@ public final class S3BucketPublisher extends Notifier {
 
     private String profileName;
 
+    private static final int retries = 5;
     public static final Logger LOGGER = Logger.getLogger(S3BucketPublisher.class.getName());
 
     private final List<Entry> entries = new ArrayList<Entry>();
@@ -102,6 +101,7 @@ public final class S3BucketPublisher extends Notifier {
 
         try {
             Map<String, String> envVars = build.getEnvironment(listener);
+            Map<Upload, UploadInfo> uploadInfoMap = new HashMap<Upload, UploadInfo>();
 
             log(listener.getLogger(), "Entries: " + entries);
 
@@ -154,19 +154,27 @@ public final class S3BucketPublisher extends Notifier {
                                     src.getName(), bucket, src.length()));
 
                     Upload upload = transferManager.upload(bucket, src.getName(), src.read(), meta);
+                    uploadInfoMap.put(upload, new UploadInfo(bucket, src.getName(), src.read(), meta));
                     uploads.add(upload);
                 }
             }
 
             log(listener.getLogger(), String.format("Waiting for %d S3 uploads to complete.", uploads.size()));
             for (Upload upload : uploads) {
-                try{
-                    upload.waitForUploadResult();
-                } catch (Exception e){
-                    LOGGER.log(Level.WARNING, String.format("Unable to upload file: %s", upload.getDescription()), e);
+                int tries = 1;
+                while (tries <= retries) {
+                    try {
+                        upload.waitForUploadResult();
+                    } catch (Exception e) {
+                        LOGGER.log(Level.WARNING, String.format("Unable to upload file: %s", upload.getDescription()), e);
+                        UploadInfo uploadData = uploadInfoMap.get(upload);
+                        upload = transferManager.upload(uploadData.getBucket(), uploadData.getName(),
+                                uploadData.getRead(), uploadData.getMeta());
+                        tries++;
+                    }
+                    log(listener.getLogger(), String.format("Upload result for %s was %s",
+                            upload.getDescription(), upload.getState().name()));
                 }
-                log(listener.getLogger(), String.format("Upload result for %s was %s",
-                    upload.getDescription(), upload.getState().name()));
             }
 
             transferManager.shutdownNow();
@@ -276,5 +284,35 @@ public final class S3BucketPublisher extends Notifier {
 
     protected void log(final PrintStream logger, final String message) {
         logger.println(StringUtils.defaultString(DESCRIPTOR.getShortName()) + message);
+    }
+
+    private class UploadInfo {
+        private final String bucket;
+        private final String name;
+        private final InputStream read;
+        private final ObjectMetadata meta;
+
+        public UploadInfo(String bucket, String name, InputStream read, ObjectMetadata meta) {
+            this.bucket = bucket;
+            this.name = name;
+            this.read = read;
+            this.meta = meta;
+        }
+
+        public String getBucket() {
+            return bucket;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public InputStream getRead() {
+            return read;
+        }
+
+        public ObjectMetadata getMeta() {
+            return meta;
+        }
     }
 }
