@@ -165,6 +165,7 @@ public final class S3BucketPublisher extends Notifier {
                 while (tries <= retries) {
                     try {
                         upload.waitForUploadResult();
+                        tries = retries;
                     } catch (Exception e) {
                         LOGGER.log(Level.WARNING, String.format("Unable to upload file: %s", upload.getDescription()), e);
                         UploadInfo uploadData = uploadInfoMap.get(upload);
