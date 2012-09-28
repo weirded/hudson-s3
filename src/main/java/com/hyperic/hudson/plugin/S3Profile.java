@@ -13,7 +13,6 @@ public class S3Profile {
   String name;
   String accessKey;
   String secretKey;
-  private AmazonS3 s3;
 
   public static final Logger LOGGER =
     Logger.getLogger(S3Profile.class.getName());
@@ -52,42 +51,27 @@ public class S3Profile {
     this.name = name;
   }
 
-  public void login() {
-    if (s3 != null) {
-      return;
-    }
+  public AmazonS3 connect() {
+    return new AmazonS3Client(new BasicAWSCredentials(this.accessKey, this.secretKey));
+  }
+
+  public void checkAccess() {
     try {
-      this.s3 = new AmazonS3Client(createCredentials());
-      this.s3.listBuckets();
+      connect().doesBucketExist("never-never-land");
     } catch (RuntimeException e) {
       LOGGER.log(Level.SEVERE, e.getMessage());
       throw e;
     }
   }
 
-  /**
-   * Check whether the credentials configured are valid. Used by the UI to ensure the user entered
-   * valid credentials.
-   */
-  public void check() {
-    s3.doesBucketExist("never-never-land");
-  }
-
-  public void logout() {
-    s3 = null;
-  }
-
   public void ensureBucket(String bucketName) {
+    AmazonS3 s3 = connect();
     if (!s3.doesBucketExist(bucketName)) {
       s3.createBucket(bucketName);
     }
   }
 
   public TransferManager createTransferManager() {
-    return new TransferManager(createCredentials());
-  }
-
-  private AWSCredentials createCredentials() {
-    return new BasicAWSCredentials(this.accessKey, this.secretKey);
+    return new TransferManager(connect());
   }
 }
